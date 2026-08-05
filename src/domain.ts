@@ -92,6 +92,40 @@ export interface Decision {
 /** A rule is pure: same inputs, same result, no I/O. */
 export type Rule = (intent: OrderIntent, ctx: EvaluationContext) => RuleResult;
 
+/**
+ * One line of the decision journal.
+ *
+ * Deliberately minimal. An earlier design carried a full replayable context
+ * snapshot and structured observed/threshold values per rule; both were cut. The
+ * property that matters is whether a human reading one line cold can judge
+ * whether the refusal was correct — and for that, a reason string carrying the
+ * arithmetic beats any schema. See docs/design-standards.md.
+ *
+ * `forwarded` is intentionally absent: it is derivable from mode + outcome, and
+ * stored state that can drift is worse than derived state.
+ */
+export interface JournalEntry {
+  ts: string;
+  mode: Mode;
+  tool: string;
+  intent: OrderIntent;
+  outcome: Outcome;
+  code?: ErrorCode;
+  reason: string;
+  rules: RuleResult[];
+  equity?: number;
+  spotPrice?: number;
+  brokerResponse?: unknown;
+}
+
+/** Sink for journal entries. Injected so the gate stays testable and pure-ish. */
+export type JournalRecorder = (entry: JournalEntry) => void;
+
+/** The only part of cTrader the gate depends on — faked in tests. */
+export interface CTraderClient {
+  createOrder(intent: OrderIntent): Promise<unknown>;
+}
+
 /** True when the decision permits forwarding to the broker under `mode`. */
 export function shouldForward(outcome: Outcome, mode: Mode): boolean {
   if (mode === 'observe') return true;
