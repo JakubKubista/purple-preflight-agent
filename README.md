@@ -11,15 +11,20 @@ Preflight sits in that gap. It holds the cTrader `trading` credential so your ag
 doesn't, evaluates every order intent against rules you define, and journals every
 decision including the refusals. The evaluator is never an LLM call.
 
-> ### ⚠️ Status: specification complete, **not yet implemented**
+> ### Status: gate works end-to-end against the live broker
 >
-> 4-hour case study build (2026-08-05), not a product. The design, specification and
-> platform findings are done and committed. **There is no runnable code yet** — no
-> `package.json`, no `src/`. The Install and Usage sections below describe the *intended*
-> interface, not something you can run today.
+> 4-hour case study build (2026-08-05), not a product. **16/16 tests green, and both
+> paths verified live** against `https://mcp.ctrader.com/trading/mcp` on an Axiory demo
+> account. Rules were committed test-first — the failing test is a separate commit from
+> its implementation, so the red-then-green history is real rather than reconstructed.
 >
-> [`DIARY.md`](DIARY.md) records where the time went and why, including the decision that
-> cost the implementation. Check the git log for what is actually green.
+> **Shipped:** the proxy holding the trading credential, `observe`/`enforce`,
+> `create_order` gated by `mandatory-stop-loss`, four mutations proxied, the journal,
+> fail-closed symbol metadata, and the test asserting a denial never reaches the broker.
+>
+> **Not shipped:** `max-lots-per-symbol`, `amend_position` gating, the pipettes-leak
+> guard, `max-risk-per-trade`. See [Limitations](#limitations) and
+> [`DIARY.md`](DIARY.md).
 
 ## How it works
 
@@ -55,9 +60,26 @@ Every decision resolves to one of three outcomes:
 missing something it needs, and you should expect to fix a config file rather than
 reconsider a trade. Full model in [`docs/architecture.md`](docs/architecture.md).
 
-## Install
+## Proof: the same order, refused and allowed
 
-> Not yet implemented — this is the intended interface.
+Two adjacent lines from a real journal ([`fixtures/example-journal.jsonl`](fixtures/example-journal.jsonl)),
+both run through Preflight against the live broker. The intents are **identical but for
+one field** — the one the policy asked for:
+
+| Outcome | `relativeStopLoss` | Forwarded | Reason |
+|---|---|---|---|
+| `DENY` | *absent* | **no** | `BUY MARKET order carries no stop loss; policy requires one. Set relativeStopLoss (points from fill price).` |
+| `ALLOW` | `300` | yes | `1 rule(s) passed` |
+
+After the `DENY`, `get_positions` still returned `{positions: [], orders: []}` — the
+broker never saw it. After the `ALLOW`, position `10686465` opened at `1.15570` with its
+stop at `1.15270`, exactly 300 points below fill.
+
+That pair is the whole thesis in two lines: the model proposed the same trade twice, and
+the difference between execution and refusal was a deterministic rule, not a judgement
+call.
+
+## Install
 
 Requires Node 22+ and a cTrader remote MCP token from cTrader Web → Settings → Remote MCP.
 
