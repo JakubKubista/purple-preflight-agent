@@ -13,18 +13,21 @@ decision including the refusals. The evaluator is never an LLM call.
 
 > ### Status: gate works end-to-end against the live broker
 >
-> 4-hour case study build (2026-08-05), not a product. **16/16 tests green, and both
-> paths verified live** against `https://mcp.ctrader.com/trading/mcp` on an Axiory demo
-> account. Rules were committed test-first — the failing test is a separate commit from
-> its implementation, so the red-then-green history is real rather than reconstructed.
+> 4-hour case study build (2026-08-05), not a product. **43/43 tests green, and every
+> gated path verified live** against `https://mcp.ctrader.com/trading/mcp` on an Axiory
+> demo account. Rules were committed test-first — the failing test is a separate commit
+> from its implementation, so the red-then-green history is real rather than
+> reconstructed. A security review, a comment-completeness pass, and a strict structural
+> review ran after the build and each found and fixed something real — see
+> [`DIARY.md`](DIARY.md).
 >
 > **Shipped:** the proxy holding the trading credential, `observe`/`enforce`,
-> `create_order` gated by `mandatory-stop-loss`, four mutations proxied, the journal,
-> fail-closed symbol metadata, and the test asserting a denial never reaches the broker.
+> `create_order` gated by two rules, `amend_position` gated by a `Q-R10` guard, three
+> mutations proxied unevaluated, the journal, fail-closed symbol metadata, and the test
+> asserting a denial never reaches the broker.
 >
-> **Not shipped:** `max-lots-per-symbol`, `amend_position` gating, the pipettes-leak
-> guard, `max-risk-per-trade`. See [Limitations](#limitations) and
-> [`DIARY.md`](DIARY.md).
+> **Not shipped:** `amend_order` gating, the pipettes-leak guard, `max-risk-per-trade`.
+> See [Limitations](#limitations) and [`SPEC.md`](SPEC.md#scope) for why each was cut.
 
 ## How it works
 
@@ -78,6 +81,12 @@ stop at `1.15270`, exactly 300 points below fill.
 That pair is the whole thesis in two lines: the model proposed the same trade twice, and
 the difference between execution and refusal was a deterministic rule, not a judgement
 call.
+
+`amend_position`'s guard has the same kind of proof — tightening a stop on that same
+position while omitting the take-profit was refused live, and the take-profit survived
+where cTrader's own platform would have silently deleted it. Screenshot, journal
+timestamps, and the platform quirk (`Q-R10`) behind it: [`docs/guide.md`](docs/guide.md)
+and [`docs/platform-findings.md`](docs/platform-findings.md).
 
 ## Install
 

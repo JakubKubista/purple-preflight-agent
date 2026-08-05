@@ -55,10 +55,13 @@ A rule that lives only in a prompt is not a control. That's the entire thesis, a
 why a "policy skill" layered over cTrader's own MCP was rejected as an architecture: it
 would put the rules back inside the thing being governed.
 
-Context is a **parameter**, never something a rule fetches. The two shipped rules
+Context is a **parameter**, never something a rule fetches. The shipped checks
 deliberately differ in what they require — `mandatory-stop-loss` needs nothing but the
-intent, `max-lots-per-symbol` needs symbol metadata and policy — which forces the engine
-interface to pass context in rather than letting rules reach out for it.
+intent; `max-lots-per-symbol` needs symbol metadata and policy; the `amend_position` guard
+needs live broker state (the position's current legs) — which forces the engine interface
+to pass context in rather than letting a rule reach out for it. The `amend_position` guard
+sits outside the declarative engine (see `docs/architecture.md`), but the same discipline
+applies to it: it's handed the position, it never fetches it.
 
 ---
 
@@ -84,10 +87,14 @@ dies on.
 
 ### Also covered
 
-- **Golden conversion tables** — lots→volume for EURUSD (`lotSize` 100,000) beside
-  XAUUSD (100), and pipettes↔display. This is where a silent 1000× error lives, so the
-  values are hand-checked rather than derived from the code under test.
-- **Determinism** — the same intent evaluated twice yields an identical `Decision`.
+- **The lotSize trap, hand-checked** — `max-lots-per-symbol.test.ts` asserts the same
+  volume against a *wrongly*-forex-sized XAUUSD contract computes a thousandth of the real
+  position and passes. If anyone later replaces the per-symbol lookup with a constant,
+  that specific test flips; it guards the trap rather than merely avoiding it. Values are
+  hand-checked, not derived from the code under test.
+- **Determinism** — asserted independently in all four test files: the same intent
+  evaluated twice yields an identical `Decision` (or `RuleResult`, for the `amend_position`
+  guard, which isn't `Decision`-shaped — see `docs/architecture.md`).
 
 ### Deliberately not unit-tested
 

@@ -78,7 +78,7 @@ promotion to `enforce`.
 |---|---|
 | `ALLOW` | Evaluated, passed |
 | `DENY` | A policy rule refused it |
-| `ERROR` | The gate could not judge — `code` says why (`malformed_price`, `unknown_symbol_metadata`) |
+| `ERROR` | The gate could not judge — `code` says why (`malformed_price`, `unknown_symbol_metadata`, `position_not_found`) |
 
 `DENY` and `ERROR` are deliberately separate, and only `DENY` is a policy decision.
 
@@ -106,12 +106,20 @@ path, which removes an entire category of silent error.
 position id and two optional fields. They barely overlap, and a third gated tool isn't
 coming soon.
 
-**Shared** — the `Decision` type, the journal writer, the `observe`/`enforce` branch, the
-forward step. This is gate machinery; duplicating it would mean implementing observe mode
-twice and maintaining two journal record shapes.
+**Shared** (`src/gate.ts`) — the `Decision` type, the journal writer, the
+`observe`/`enforce` branch, the forward step. `gate()` takes an already-computed
+`Decision`, a tool name, and a zero-argument `forward()` closure, so it never needs to
+know how a verdict was reached or what shape the intent behind it takes.
 
-**Disjoint** — how a verdict is reached. `evaluateCreateOrder(intent, ctx, policy)` runs
-the declarative rule engine. The planned `checkAmendPreservesLegs(intent, position)` is a
-hardcoded check with no policy input at all — "don't silently delete the other leg" is a
-boolean whose only sane value is `true`, and putting it in `policy.yaml` would invent a
-setting inviting someone to switch correctness off.
+**Disjoint** — how a verdict is reached. `evaluate()` in `src/engine.ts` runs the
+declarative rule engine for `create_order`. `checkAmendPreservesLegs(intent, position)`
+in `src/amend-guard.ts` is a hardcoded check with no policy input at all — "don't
+silently delete the other leg" is a boolean whose only sane value is `true`, and putting
+it in `policy.yaml` would invent a setting inviting someone to switch correctness off.
+
+`gate()` was not built generic from the start. The first version was hardcoded to
+`create_order`; when `amend_position` shipped, its handler didn't reuse it and hand-rolled
+an equivalent pipeline in `server.ts` instead, because there was nothing generic to call.
+Generalizing it afterward deleted the duplication *and* fixed a real bug the duplication
+had produced — the amend handler's "position not found" case bypassed the shared journal
+write entirely, so that one refusal left no trace. See `DIARY.md`.

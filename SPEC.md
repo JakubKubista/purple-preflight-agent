@@ -53,10 +53,11 @@ and the decision to forward or refuse.
 | Path | Profile | Tools | Called by |
 |---|---|---|---|
 | Read | `data` | `get_balance`, `get_symbols`, `get_spot_prices`, `get_positions`, `get_assets` | the agent, directly |
-| Write | `trading` | `create_order` **(gated)** | Preflight only |
-| Write | `trading` | `amend_order`, `cancel_order`, `close_position`, `amend_position` — proxied and journaled, not evaluated in v1 | Preflight only |
+| Write | `trading` | `create_order` **(gated** — `mandatory-stop-loss`, `max-lots-per-symbol`**)** | Preflight only |
+| Write | `trading` | `amend_position` **(gated** — [`Q-R10`](docs/platform-findings.md) guard**)** | Preflight only |
+| Write | `trading` | `amend_order`, `cancel_order`, `close_position` — proxied and journaled, not evaluated | Preflight only |
 
-All five mutations are proxied, not just the gated one — otherwise the trader could no
+All five mutations are proxied, not just the gated ones — otherwise the trader could no
 longer close a position, since those tools no longer exist in the agent's surface.
 Preflight mirrors cTrader's `create_order` schema exactly, so it is a drop-in
 replacement and there is no unit translation to get wrong.
@@ -64,17 +65,18 @@ replacement and there is no unit translation to get wrong.
 ## Scope
 
 **In:** the proxy with `observe`/`enforce`; `create_order` gated by `mandatory-stop-loss`
-and `max-lots-per-symbol`; all five mutations proxied and journaled; append-only JSONL
-journal; symbol metadata that **fails closed** on unknown instruments; malformed-price
-rejection; test-first coverage of the deterministic core plus a test asserting a denial
-never reaches the broker; a live run against the real remote MCP.
+and `max-lots-per-symbol`; `amend_position` gated by a `Q-R10` guard; all five mutations
+proxied and journaled; append-only JSONL journal; symbol metadata that **fails closed**
+on unknown instruments; test-first coverage of the deterministic core (43 tests) plus a
+test asserting a denial never reaches the broker; a live run against the real remote MCP.
 
-**Deliberately out, given ~4 hours:**
+**Deliberately out:**
 
 | Cut | Why |
 |---|---|
 | `max-risk-per-trade` | Deposit currency is EUR, both instruments quote USD. Pip value needs a conversion chain and remote MCP supplies no rates. The chain is the finding. |
-| `amend_position` gating | Quirk [`Q-R10`](docs/platform-findings.md): it deletes a take-profit by omission. A real footgun, but a second differently-shaped evaluator. |
+| `amend_order` gating | Real gap, not just an unbuilt nice-to-have: an order sized within a `max-lots-per-symbol` cap at `create_order` time can be resized past it via `amend_order`, since that call carries no policy check. Found during the security pass, documented in README rather than rushed as a fix — building it properly is a third evaluator (fetch the pending order, convert volume to lots, check policy), not a patch. |
+| Pipettes-leak guard | The `Q-K19` malformed-price check ([`docs/platform-findings.md`](docs/platform-findings.md)) was designed for but never wired into normalization. |
 | Hash-chained journal | Tamper-evidence is narrative at demo scale; JSONL is schemaless, so it's a later one-liner. |
 | `symbol-allowlist` | Redundant — fail-closed metadata already refuses anything unlisted. |
 | Broker/prop-firm enforcement | The natural extension, but not credibly demonstrable from one demo account. |
