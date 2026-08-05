@@ -45,6 +45,7 @@ const SymbolsSchema = z.object({
 
 export interface SymbolTable {
   provenance: z.infer<typeof SymbolsSchema>['provenance'];
+  /** Keyed by numeric symbolId, not the string keys YAML parses object keys as. */
   bySymbolId: Map<number, SymbolMeta>;
 }
 
@@ -120,6 +121,9 @@ export function loadRuntimeConfig(policy: Policy, env: NodeJS.ProcessEnv): Runti
   return {
     slug,
     url: env.PREFLIGHT_CTRADER_URL ?? 'https://mcp.ctrader.com/trading/mcp',
+    // Precedence: env var > policy.yaml's mode > default. The env var wins so an
+    // operator can force observe mode at deploy time without editing the policy
+    // file a trader owns.
     mode: (envMode as Mode) ?? policy.mode ?? 'observe',
   };
 }

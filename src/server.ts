@@ -186,6 +186,18 @@ server.tool(
   },
 );
 
+/**
+ * Pass-through mutations. Proxied but not evaluated in v1.
+ *
+ * These MUST be exposed even though they aren't gated: Preflight holds the only
+ * trading credential, so if it didn't proxy them the trader could no longer
+ * close a position or manage a pending order at all.
+ *
+ * close_position can only reduce exposure. amend_order and cancel_order cannot
+ * increase it directly, but amend_order is a real gap: an order sized within a
+ * max-lots-per-symbol cap at create_order time can be resized past it here,
+ * since this call carries no policy check. See README "What it doesn't do".
+ */
 const PASS_THROUGH = [
   ['close_position', 'Close a position (proxied, not policy-evaluated)'],
   ['amend_order', 'Amend a pending order (proxied, not policy-evaluated)'],
