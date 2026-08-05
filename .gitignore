@@ -1,1 +1,9 @@
 .claude/settings.local.json
+
+# Spotware's cTrader skill is proprietary ("All rights reserved", redistribution
+# governed by the Spotware EULA) — installed locally, never committed.
+# Restore with: npx skills add https://github.com/spotware/ctrader-skills \
+#                 --skill '*' --agent claude-code -y
+# skills-lock.json IS committed: it pins the source + hash for that restore.
+.claude/skills/ctrader-mcp-servers/
+skills-lock.json
