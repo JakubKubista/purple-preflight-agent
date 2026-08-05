@@ -40,18 +40,24 @@ per tool — is in
 
 ## Files
 
+As planned above, with two differences from what actually shipped: `symbols.ts` and
+`policy.ts` merged into one `config.ts` (both are "load YAML, fail loudly" — splitting
+them bought nothing), and `normalize.ts` never got built at all, since the pipettes guard
+it would have carried was deferred (see [`SPEC.md`](SPEC.md#scope)) and no other
+normalization turned out to be needed once Preflight mirrored cTrader's schema exactly.
+
 ```
-src/domain.ts                        Intent, Decision, Outcome, RuleResult
-src/normalize.ts                     Zod schema (mirrors cTrader) + pipettes guard
-src/symbols.ts                       symbols.yaml loader; fail-closed on unknown
-src/policy.ts                        policy.yaml loader; refuses to start if invalid
+src/domain.ts                        Intent, Decision, Outcome, RuleResult, JournalEntry
+src/config.ts                        policy.yaml + symbols.yaml loaders, Zod, fail loud
 src/rules/mandatory-stop-loss.ts
 src/rules/max-lots-per-symbol.ts
-src/engine.ts                        pure: (intent, ctx, policy) => Decision
+src/amend-guard.ts                   Q-R10 guard; not a Rule, not routed through engine.ts
+src/engine.ts                        pure: (intent, ctx, rules) => Decision
+src/gate.ts                          shared pipeline: forward-if-permitted, then journal
 src/journal.ts                       appendFileSync, one JSON line
 src/ctrader.ts                       fetch-based MCP client (protocol proven via curl)
-src/server.ts                        stdio MCP server; 1 gated + 4 pass-through in a loop
-symbols.yaml                         EURUSD + XAUUSD, hand-verified, with provenance
+src/server.ts                        stdio MCP server; 2 gated + 3 pass-through in a loop
+symbols.yaml                         EURUSD + XAUUSD, source: spotware-baseline, UNVERIFIED
 policy.yaml                          trader-editable; comments carry the why
 journal/decisions.jsonl              gitignored; a fixture journal committed as evidence
 ```
@@ -80,7 +86,9 @@ and commit that. **The git history is the evidence and cannot be reconstructed l
 
 **Checkpoint 20:15** — if steps 10 and 11 are not wired and green, `max-lots-per-symbol`
 drops to P1 and `mandatory-stop-loss` ships alone. Named trigger, decided in advance
-rather than judged at 20:45 when optimism is motivated.
+rather than judged at 20:45 when optimism is motivated. *(Didn't fire — both rules were
+wired and green well before it. `amend_position` gating, not in this table at all when it
+was written, shipped afterward against found slack; see `DIARY.md`.)*
 
 **Not traded under any circumstance:** the live order path, and test-first on whatever
 ships. Those two are what make the build mean anything.
@@ -103,24 +111,17 @@ checked **for this build to be called done**:
      sending**, position verified via `get_positions`, journal line written.
 - `git status` clean of secrets; `.env` gitignored.
 
-## Blocking input
+## Blocking input — resolved
 
-`symbols.yaml` needs hand-transcribed values — remote MCP has no contract specs. From
-cTrader Web → Symbol Info, for **EURUSD** and **XAUUSD**, in panel order: min price
-change · pip position · lot size · min trade quantity · max trade quantity · (optional)
-min stop-loss / take-profit distance.
-
-Steps 1–2 and 6 don't depend on it. If it doesn't arrive, `symbols.yaml` is seeded from
-the Spotware baseline table marked `UNVERIFIED for this broker`, and that caveat goes in
-the README.
+`symbols.yaml` needed hand-transcribed values that never arrived during the build. The
+fallback planned for exactly this case is what happened: seeded from the Spotware
+baseline table, marked `source: spotware-baseline, status: UNVERIFIED`, caveat carried in
+`symbols.yaml` itself and in `README.md`.
 
 ## Deferred
 
 The full list with reasons is the "deliberately out" table in [`SPEC.md`](SPEC.md#scope)
 — scope control is a graded part of that deliverable, so it's stated there once rather
-than restated here. `Q-R10`, the quirk behind deferring `amend_position`, is written up
-in [`docs/platform-findings.md`](docs/platform-findings.md).
-
-Build-order consequence only: `max-lots-per-symbol` (step 8) is the designated drop if
-the checkpoint above fires; everything else in that table was already out before the
-build started.
+than restated here. `amend_position`/`Q-R10`, listed as deferred when this plan was
+written, shipped instead — see [`docs/platform-findings.md`](docs/platform-findings.md)
+for the quirk and [`docs/guide.md`](docs/guide.md) for the live proof.

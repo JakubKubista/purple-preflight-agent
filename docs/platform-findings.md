@@ -91,7 +91,8 @@ off, so it isn't configurable, and it's excluded from policy-decision counts.
 
 ## 3. `amend_position` deletes by omission (`Q-R10`)
 
-Documented in the skill's quirks ledger and not yet gated by this build.
+Documented in the skill's quirks ledger, and now gated by this build
+(`src/amend-guard.ts`).
 
 A position has both `stopLoss` and `takeProfit` set. Call
 `amend_position(positionId, stopLoss=<new>)` to tighten the stop, omitting `takeProfit`.
@@ -101,10 +102,17 @@ outright — the schema declares it non-nullable.
 So an agent doing something entirely reasonable — tightening a stop as a trade moves in
 your favour — silently strips your profit target, with no error at any layer.
 
-This is the strongest candidate for the next gated tool: a hardcoded check that refuses
-any `amend_position` touching one leg while omitting the other. It needs an open position
-with both legs set to demonstrate, which a flat demo account can't provide without
-seeding.
+Preflight refuses any `amend_position` call that would remove a leg the position
+currently holds, without touching the declarative rule engine — see
+[`docs/architecture.md`](architecture.md#no-shared-rule-engine-across-tools) for why this
+is a separate, hardcoded check rather than a third rule shape.
+
+**Verified live**, needing exactly the open position with both legs set that a flat demo
+account can't provide without seeding: an amend that added a take-profit to an
+existing position passed; the next call, tightening the stop alone, was refused with
+*"would remove takeProfit 1.16 — amend_position deletes omitted legs rather than
+preserving them (Q-R10)"*; `get_positions` confirmed the take-profit survived.
+Walkthrough with the cTrader Web screenshot: [`docs/guide.md`](guide.md).
 
 ---
 
@@ -130,3 +138,17 @@ genuinely were empty. Equity-based rules are therefore demonstrable without seed
 reason: it's an unauthenticated server on `127.0.0.1:9876` riding the open cTrader
 session. There'd be no credential for Preflight to exclusively hold, which collapses the
 entire enforcement argument.
+
+**This demo account is visible at `app.ctrader.com`, not only at the broker's white-label
+domain**, contrary to `platform-notes.md`'s claim that the account lives at
+`ct.axiory.com`, "not the generic `app.ctrader.com`." Confirmed by direct observation:
+the same position (`PID10686465`) opened via the remote MCP was visible and fully
+interactive at `app.ctrader.com`, logged in with the account's cTID.
+
+Following the skill's own discipline of not generalising a single observation across
+brokers ([`known-quirks.md`](../.claude/skills/ctrader-mcp-servers/references/known-quirks.md)
+reserves `Q-B<n>` for exactly this): this is one confirmed data point for one white-label
+(Axiory), not a claim that cTID unified login works for every broker. The UI still shows
+the underlying broker's branding ("AXIORY | Demo") regardless of which domain was used to
+log in, which is presumably why the original assumption conflated the two. `docs/guide.md`
+links both domains rather than asserting only one works.

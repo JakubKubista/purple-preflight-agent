@@ -11,15 +11,23 @@ Preflight sits in that gap. It holds the cTrader `trading` credential so your ag
 doesn't, evaluates every order intent against rules you define, and journals every
 decision including the refusals. The evaluator is never an LLM call.
 
-> ### ⚠️ Status: specification complete, **not yet implemented**
+> ### Status: gate works end-to-end against the live broker
 >
-> 4-hour case study build (2026-08-05), not a product. The design, specification and
-> platform findings are done and committed. **There is no runnable code yet** — no
-> `package.json`, no `src/`. The Install and Usage sections below describe the *intended*
-> interface, not something you can run today.
+> 4-hour case study build (2026-08-05), not a product. **43/43 tests green, and every
+> gated path verified live** against `https://mcp.ctrader.com/trading/mcp` on an Axiory
+> demo account. Rules were committed test-first — the failing test is a separate commit
+> from its implementation, so the red-then-green history is real rather than
+> reconstructed. A security review, a comment-completeness pass, and a strict structural
+> review ran after the build and each found and fixed something real — see
+> [`DIARY.md`](DIARY.md).
 >
-> [`DIARY.md`](DIARY.md) records where the time went and why, including the decision that
-> cost the implementation. Check the git log for what is actually green.
+> **Shipped:** the proxy holding the trading credential, `observe`/`enforce`,
+> `create_order` gated by two rules, `amend_position` gated by a `Q-R10` guard, three
+> mutations proxied unevaluated, the journal, fail-closed symbol metadata, and the test
+> asserting a denial never reaches the broker.
+>
+> **Not shipped:** `amend_order` gating, the pipettes-leak guard, `max-risk-per-trade`.
+> See [Limitations](#limitations) and [`SPEC.md`](SPEC.md#scope) for why each was cut.
 
 ## How it works
 
@@ -55,9 +63,32 @@ Every decision resolves to one of three outcomes:
 missing something it needs, and you should expect to fix a config file rather than
 reconsider a trade. Full model in [`docs/architecture.md`](docs/architecture.md).
 
-## Install
+## Proof: the same order, refused and allowed
 
-> Not yet implemented — this is the intended interface.
+Two adjacent lines from a real journal ([`fixtures/example-journal.jsonl`](fixtures/example-journal.jsonl)),
+both run through Preflight against the live broker. The intents are **identical but for
+one field** — the one the policy asked for:
+
+| Outcome | `relativeStopLoss` | Forwarded | Reason |
+|---|---|---|---|
+| `DENY` | *absent* | **no** | `BUY MARKET order carries no stop loss; policy requires one. Set relativeStopLoss (points from fill price).` |
+| `ALLOW` | `300` | yes | `1 rule(s) passed` |
+
+After the `DENY`, `get_positions` still returned `{positions: [], orders: []}` — the
+broker never saw it. After the `ALLOW`, position `10686465` opened at `1.15570` with its
+stop at `1.15270`, exactly 300 points below fill.
+
+That pair is the whole thesis in two lines: the model proposed the same trade twice, and
+the difference between execution and refusal was a deterministic rule, not a judgement
+call.
+
+`amend_position`'s guard has the same kind of proof — tightening a stop on that same
+position while omitting the take-profit was refused live, and the take-profit survived
+where cTrader's own platform would have silently deleted it. Screenshot, journal
+timestamps, and the platform quirk (`Q-R10`) behind it: [`docs/guide.md`](docs/guide.md)
+and [`docs/platform-findings.md`](docs/platform-findings.md).
+
+## Install
 
 Requires Node 22+ and a cTrader remote MCP token from cTrader Web → Settings → Remote MCP.
 
@@ -115,8 +146,11 @@ DENY  1.00 lots XAUUSD = 100 oz notional, limit 0.50 lots
 - **Symbol metadata is a build-time snapshot.** The remote MCP exposes no contract
   specifications at all, so `symbols.yaml` is hand-transcribed and broker-specific. A
   wrong value gives a confident wrong verdict.
-- **`amend_position` is proxied but not evaluated** — and it deletes a take-profit by
-  omission. See [`docs/platform-findings.md`](docs/platform-findings.md).
+- **`amend_order` and `cancel_order` are proxied but not evaluated.** Concretely: a
+  pending order placed within a `max-lots-per-symbol` cap can be resized past it via
+  `amend_order` afterward, since that call carries no policy check. `close_position` is
+  proxied unevaluated too, but can only reduce exposure. (`amend_position` *is* now
+  evaluated — see [`docs/platform-findings.md`](docs/platform-findings.md) for `Q-R10`.)
 - **The journal is local and unsigned.** Durable against crashes, not against a
   determined local user.
 - Single account. No UI. No live-account guards.
@@ -131,6 +165,7 @@ DENY  1.00 lots XAUUSD = 100 oz notional, limit 0.50 lots
 | [`docs/architecture.md`](docs/architecture.md) | Credential model, modes, outcomes, agent-vs-app split |
 | [`docs/platform-findings.md`](docs/platform-findings.md) | Live-server findings that contradict the official docs |
 | [`docs/design-standards.md`](docs/design-standards.md) | Reason-string standard, determinism, testing approach |
+| [`docs/guide.md`](docs/guide.md) | Manual test walkthrough — copy-paste terminal commands, no coding required |
 
 Precedence, if two disagree: `CLAUDE.md` on process → `SPEC.md` on scope and metrics →
 `PLAN.md` on build order → `docs/` on design detail. This README is derived from those

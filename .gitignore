@@ -7,3 +7,12 @@
 # skills-lock.json IS committed: it pins the source + hash for that restore.
 .claude/skills/ctrader-mcp-servers/
 skills-lock.json
+
+node_modules/
+dist/
+
+# Holds the cTrader `trading` slug — the one credential the agent must not have.
+.env
+
+# Live decision journal. A fixture journal is committed separately as evidence.
+journal/
