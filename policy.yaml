@@ -1,0 +1,23 @@
+# Preflight policy — the rules you define.
+#
+# This file is YAML rather than JSON specifically so it can hold comments: a
+# policy file is where you record WHY a limit is what it is, and that reasoning
+# is worth more six months from now than the number itself.
+#
+# A malformed or missing policy is a STARTUP FAILURE, not a warning. Preflight
+# refuses to start rather than run unprotected — a gate that silently allows
+# everything is worse than no gate, because you'd believe you had one.
+
+# observe = evaluate, journal, and forward anyway (records what it WOULD block)
+# enforce = a DENY stops the order
+#
+# Start in observe. Promote to enforce once the journal shows the rules aren't
+# refusing things you'd have wanted through. Overridden by PREFLIGHT_MODE.
+mode: observe
+
+rules:
+  # Refuses any order with no stop loss, in either form cTrader accepts.
+  # The cheapest protection against the most common agent failure: a naked
+  # market order placed because the model didn't think to include a stop.
+  mandatory-stop-loss:
+    enabled: true

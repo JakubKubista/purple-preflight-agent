@@ -1,0 +1,41 @@
+# Per-symbol contract metadata.
+#
+# WHY THIS FILE EXISTS: the cTrader remote MCP exposes no contract specifications
+# at all. `get_symbols` returns seven fields across all 481 symbols and none of
+# them is pipDigits, lotSize or minVolume, and there is no get_symbol_details on
+# the remote surface. Verified three ways — see docs/platform-findings.md.
+#
+# So Preflight's arithmetic cannot be sourced from the system it polices. These
+# values are carried here, and any symbol NOT listed is refused with
+# ERROR: unknown_symbol_metadata rather than guessed. Guessing lotSize is how a
+# 0.01-lot XAUUSD order becomes a 1000x oversize position.
+#
+# THESE ARE BROKER-SPECIFIC AND NOT PORTABLE. A production deployment needs a
+# metadata sync against broker reference data, not a checked-in file.
+
+provenance:
+  broker: axiory
+  environment: demo
+  # UNVERIFIED against this broker. Seeded from Spotware's baseline table
+  # (ctrader-mcp-servers skill, assets/symbol_precision_table.json, 2026-05-13),
+  # which itself says "always verify against get_symbol_details at session start"
+  # — an instruction that cannot be followed on the remote profile.
+  #
+  # TO VERIFY: cTrader Web -> Symbol Info panel, read in this order:
+  #   min price change . pip position . lot size . min trade quantity .
+  #   max trade quantity
+  # Then set source: hand-verified and record who read it and when.
+  source: spotware-baseline
+  status: UNVERIFIED
+  as_of: 2026-05-13
+
+symbols:
+  1:
+    symbolName: EURUSD
+    pipDigits: 5
+    lotSize: 100000 # 1 lot = 100,000 EUR
+
+  41:
+    symbolName: XAUUSD
+    pipDigits: 3
+    lotSize: 100 # 1 lot = 100 oz — NOT 100,000. This is the trap.
