@@ -130,3 +130,17 @@ genuinely were empty. Equity-based rules are therefore demonstrable without seed
 reason: it's an unauthenticated server on `127.0.0.1:9876` riding the open cTrader
 session. There'd be no credential for Preflight to exclusively hold, which collapses the
 entire enforcement argument.
+
+**This demo account is visible at `app.ctrader.com`, not only at the broker's white-label
+domain**, contrary to `platform-notes.md`'s claim that the account lives at
+`ct.axiory.com`, "not the generic `app.ctrader.com`." Confirmed by direct observation:
+the same position (`PID10686465`) opened via the remote MCP was visible and fully
+interactive at `app.ctrader.com`, logged in with the account's cTID.
+
+Following the skill's own discipline of not generalising a single observation across
+brokers ([`known-quirks.md`](../.claude/skills/ctrader-mcp-servers/references/known-quirks.md)
+reserves `Q-B<n>` for exactly this): this is one confirmed data point for one white-label
+(Axiory), not a claim that cTID unified login works for every broker. The UI still shows
+the underlying broker's branding ("AXIORY | Demo") regardless of which domain was used to
+log in, which is presumably why the original assumption conflated the two. `docs/guide.md`
+links both domains rather than asserting only one works.

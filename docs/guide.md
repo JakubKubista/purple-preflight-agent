@@ -39,7 +39,8 @@ same order with a stop. It goes through.
 
 ### Seeing the result
 
-Log into [`app.ctrader.com`](https://app.ctrader.com/) with the account's cTID and open
+Log into [`app.ctrader.com`](https://app.ctrader.com/) or the broker's own domain (for
+this account, [`ct.axiory.com`](https://ct.axiory.com/)) with the account's cTID and open
 the position:
 
 ![Modify position panel in cTrader Web, showing PID10686465, 0.01 lots EURUSD at 1.15570, stop loss 1.1527, take profit 1.16](assets/ctrader-web-live-position.png)
