@@ -11,10 +11,15 @@ Preflight sits in that gap. It holds the cTrader `trading` credential so your ag
 doesn't, evaluates every order intent against rules you define, and journals every
 decision including the refusals. The evaluator is never an LLM call.
 
-> **Status:** 4-hour case study build (2026-08-05), not a product. Design, specification
-> and platform findings are complete; **the implementation is unfinished**. See
-> [`DIARY.md`](DIARY.md) for what happened and where it broke, and the git log for what
-> is actually green.
+> ### ⚠️ Status: specification complete, **not yet implemented**
+>
+> 4-hour case study build (2026-08-05), not a product. The design, specification and
+> platform findings are done and committed. **There is no runnable code yet** — no
+> `package.json`, no `src/`. The Install and Usage sections below describe the *intended*
+> interface, not something you can run today.
+>
+> [`DIARY.md`](DIARY.md) records where the time went and why, including the decision that
+> cost the implementation. Check the git log for what is actually green.
 
 ## How it works
 
@@ -38,7 +43,21 @@ Runs in **`observe`** mode (forwards everything, logs what it *would* have block
 **`enforce`** (a denial stops the order). Shadow first, promote once the journal shows it
 isn't over-blocking.
 
+Every decision resolves to one of three outcomes:
+
+| Outcome | Meaning |
+|---|---|
+| `ALLOW` | Evaluated, passed |
+| `DENY` | A policy rule refused it |
+| `ERROR` | The gate couldn't judge — malformed input, or a symbol with no verified metadata |
+
+`ERROR` stops the order too, but it isn't a policy decision — it means Preflight is
+missing something it needs, and you should expect to fix a config file rather than
+reconsider a trade. Full model in [`docs/architecture.md`](docs/architecture.md).
+
 ## Install
+
+> Not yet implemented — this is the intended interface.
 
 Requires Node 22+ and a cTrader remote MCP token from cTrader Web → Settings → Remote MCP.
 
@@ -77,6 +96,10 @@ rules:
     XAUUSD: 0.50   # 1 lot = 100 oz, not 100,000 — see docs/platform-findings.md
 ```
 
+A malformed or missing `policy.yaml` is a **startup failure**, not a warning. Preflight
+refuses to start rather than run unprotected — a gate that silently allows everything is
+worse than no gate, because you'd believe you had one.
+
 Every refusal explains itself, with the arithmetic:
 
 ```
@@ -108,6 +131,10 @@ DENY  1.00 lots XAUUSD = 100 oz notional, limit 0.50 lots
 | [`docs/architecture.md`](docs/architecture.md) | Credential model, modes, outcomes, agent-vs-app split |
 | [`docs/platform-findings.md`](docs/platform-findings.md) | Live-server findings that contradict the official docs |
 | [`docs/design-standards.md`](docs/design-standards.md) | Reason-string standard, determinism, testing approach |
+
+Precedence, if two disagree: `CLAUDE.md` on process → `SPEC.md` on scope and metrics →
+`PLAN.md` on build order → `docs/` on design detail. This README is derived from those
+and never authoritative; `DIARY.md` is narrative record.
 
 ## License
 

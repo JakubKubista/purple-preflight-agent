@@ -9,18 +9,22 @@ communication, and how I work with AI — not on how polished the final app is.
 I'll be talking through this build in a follow-up interview, so the reasoning
 trail (spec, commits, diary) matters as much as what runs.
 
-**Design is settled. `SPEC.md` and `PLAN.md` carry the current decisions —
-read those before touching code.** This file is the standing brief: the
-reasoning, the constraints, and the working agreement. Where it and `PLAN.md`
-disagree on a *design decision*, `PLAN.md` wins. Where they disagree on *how I
-want to be worked with*, this file wins.
+### Precedence
+
+1. **`CLAUDE.md`** — how to work: constraints, thesis, authorisations. Wins on
+   process, always.
+2. **`SPEC.md`** — wins on scope and metrics. It's the graded artifact.
+3. **`PLAN.md`** — wins on how it's built and in what order.
+4. **`docs/`** — wins on design detail: architecture, findings, standards.
+5. **`README.md`** — user-facing, derived, never authoritative.
+6. **`DIARY.md`** — narrative record, never authoritative.
 
 ## The original assignment
 
-The brief from Purple: connect to the official cTrader remote MCP server, pick
-a small product idea that uses it, write a short technical spec (Level 1),
-then build it end-to-end (Level 2). Doesn't have to be finished — unfinished
-with honest commentary on where it broke beats polished with no reflection.
+Connect to the official cTrader remote MCP server, pick a small product idea
+that uses it, write a short technical spec (Level 1), then build it end-to-end
+(Level 2). Doesn't have to be finished — unfinished with honest commentary on
+where it broke beats polished with no reflection.
 
 **Out of scope for this repo and for Claude Code — I'm writing both myself,
 elsewhere:**
@@ -30,11 +34,10 @@ elsewhere:**
   as a separate submission item from the pitch. Also mine.
 
 Don't produce either, don't scaffold them, don't leave placeholders. The
-**AI-collaboration diary is not** out of scope — that's `DIARY.md`, and it gets
-written here, as we go.
+**AI-collaboration diary is not** out of scope — that's `DIARY.md`, written as
+we go.
 
-Full assignment text is in the `case-study-context` skill
-(`references/assignment.md`).
+Full assignment text: `case-study-context` skill, `references/assignment.md`.
 
 ## The idea I want to build against
 
@@ -46,7 +49,7 @@ it's a solved problem with established vendors, and it answers a question
 nobody is asking me.
 
 What's genuinely new is what shipped with cTrader AI Agent Connect (May 2026):
-an agent can place, modify, and close **real orders** through the remote MCP
+an agent can place, modify and close **real orders** through the remote MCP
 server, and the only control today is a client-side confirmation click.
 Nothing evaluates an agent's intent deterministically before execution, and
 nothing gets logged when an action is refused — only what executed.
@@ -55,137 +58,109 @@ The distinction that picks the idea: existing tools answer *"how do I, a human,
 size this trade correctly?"* Preflight answers *"does an agent's stated intent
 pass a rule check before it executes?"* Different question, unserved.
 
-The idea, working name **Preflight**: something that sits between an agent's
-stated trade intent and the moment it actually reaches execution on cTrader,
-checks it against rules I define, and only lets it through on a clear
-decision — with every decision, including refusals, recorded somewhere durable.
+**Preflight** sits between an agent's stated trade intent and execution, checks
+it against rules I define, and only lets it through on a clear decision — with
+every decision, including refusals, recorded durably.
 
-The core thesis, which I don't want lost in the build: **the model proposes,
+The core thesis, which must not get lost in the build: **the model proposes,
 this decides.** Whatever evaluates the rules must not itself be an LLM call —
 if a rule only lives in a prompt, it isn't a control.
 
-### Shape, as decided
-
-Full reasoning in `PLAN.md`, argued in `DIARY.md`:
-
-- A **local MCP server that exclusively holds the cTrader `trading`
-  credential**. The agent gets cTrader's `data` profile plus Preflight, and no
-  direct mutation tools at all — so a denial has no path to the broker.
-- Two modes, **`observe` → `enforce`**. Shadow first, logging what it would
-  have blocked; promote once the journal shows it isn't over-blocking.
-- Proxies all five mutating tools; gates `create_order` in v1.
+Shape: a **locally-run stdio MCP server** that exclusively holds the cTrader
+`trading` credential, proxying all five mutating tools and gating
+`create_order`, in `observe` or `enforce` mode. Detail in
+[`docs/architecture.md`](docs/architecture.md); decisions in
+[`PLAN.md`](PLAN.md). *(Note: "local MCP" unqualified means cTrader's own
+`127.0.0.1:9876` server, which this build rejects — always say "locally-run
+stdio MCP server" for Preflight.)*
 
 Rejected: a CLI (would need migrating later); a skill layered over cTrader's
-own MCP (a rule living in a markdown skill is a rule living in a prompt —
-violates the thesis).
+own MCP (a rule living in a markdown skill is a rule living in a prompt).
 
-### The limitation to state honestly rather than hide
-
-Enforcement is by **tool availability**, not by the broker. A user who re-adds
-the `trading` profile to their MCP config bypasses Preflight entirely. That's a
-real limitation, not a bug to engineer around — it belongs in the README.
-Genuine enforcement has to live server-side at the broker, which is the
-argument for this being platform capability rather than a bolt-on.
+**Design invariant:** Preflight is bypassable by re-adding the `trading`
+profile. That is a real limitation to state, **not a bug to engineer around** —
+don't add machinery that pretends to close it. Full statement in `README.md`.
 
 ## How I want to be worked with
 
 - **Propose it, don't just build it silently.** I want to see the reasoning,
-  **especially anywhere you'd cut scope given the clock.** This applies to the
-  build, not just the design — there is a scope-cut checkpoint scheduled at
-  20:15, and cuts made there get argued, not assumed.
+  **especially anywhere you'd cut scope given the clock.** This applies during
+  the build, not just design — scope cuts get argued, not assumed.
 - **Push back rather than accommodate.** Say "that's unnecessary" when it is.
-  Two failures this session came from the opposite: adding structure because
-  each addition was locally defensible, and deleting rationale because each
-  deletion was locally defensible. Both times the aggregate was wrong.
+  Both of us have added things that were locally defensible and wrong in
+  aggregate.
 - **Verify before asserting.** Where a reference file conflicts with a live
   probe, the probe wins — and the discrepancy goes in `DIARY.md`, because those
   findings are part of the deliverable.
-
-## Corrections to my own earlier assumptions
-
-Things I asserted in the first version of this brief that turned out wrong.
-Recorded so they don't get re-introduced:
-
-- **The account is not empty.** It holds **€10,000** (`balance: 1000000`,
-  `moneyDigits: 2`, deposit asset EUR). Positions and orders genuinely are
-  empty, so equity-based rules are demonstrable without seeding.
-- **Local MCP is not Windows-only** — the docs say "cTrader Windows or cTrader
-  Mac". Still rejected, but for a better reason: it's an unauthenticated server
-  on `127.0.0.1:9876`, so there'd be no credential for Preflight to exclusively
-  hold, which collapses the thesis.
-- **`docs/` does not exist and never did.** All reference material lives in the
-  `case-study-context` skill.
-- **Remote MCP exposes no per-symbol contract specs.** Verified three ways: 16
-  tools live with no `get_symbol_details`; `get_symbols` returns seven fields
-  across all 481 symbols, none of them `pipDigits`/`lotSize`; official docs
-  cover availability only. Spotware's own skill documentation claims otherwise
-  and is wrong. Preflight therefore carries a hand-verified `symbols.yaml` and
-  fails closed on unknown symbols.
-- **Price encoding is asymmetric.** Market data is pipettes (`115502`); order
-  inputs are display prices (`1.15502`). The skill's prose says otherwise; the
-  live tool schema and quirk `Q-K19` are correct.
-
-## Account reality
-
-Demo account on Axiory (`ct.axiory.com`), a cTrader white-label. **€10,000
-balance, no open positions, no trade history.**
-
-Pre-trade checks don't need history, so most of this build works against a flat
-account. **Where a rule genuinely needs existing exposure, ask — I can open a
-couple of demo positions by hand in a minute.** This is live and currently
-relevant: `amend_position` (P1) cannot be tested flat, because demonstrating
-quirk `Q-R10` requires an open position with both stop-loss and take-profit set.
-
-Live orders on the demo account are authorised at **minimum size, showing me
-the parameters before each one.**
-
-## Materials
-
-Reference material — the JD, the assignment, condensed interview notes, what
-the remote MCP exposes, the demo platform's real state, and the
-regulatory/market grounding — lives in the `case-study-context` skill. Pull in
-whichever file answers the question you actually have; don't read it all up
-front. Its index says which file answers what.
-
-**Treat it as dated, not authoritative.** Several claims have already been
-disproved against the live server (see corrections above).
+- **Check facts you could check.** Don't estimate elapsed time, file contents,
+  or tool availability forward from an earlier reading. Run the command.
 
 ## Constraints
 
 - **~4 hours total, hard deadline. Scope is the variable, not the deadline.**
   An accurate 4h with named, reasoned cuts reads as scope control; an overrun
-  on my own estimate reads as an estimation failure however honestly it's
-  reported. Cut out loud rather than leaving something half-wired.
+  on my own estimate reads as an estimation failure however honestly reported.
+  Cut out loud rather than leaving something half-wired.
+- **Test-first on anything that ships.** Commit the failing test separately
+  from the implementation — the red-then-green git history is the evidence and
+  can't be reconstructed later.
 - `DIARY.md` gets written as we go, not reconstructed at the end. Real prompts,
   including ones that failed, matter more than a clean narrative.
-- **Test-first on anything that ships.** Commit the failing test separately from
-  the implementation — the red-then-green git history is the evidence and can't
-  be reconstructed later.
-- No secrets committed. Token goes in `.env`.
+- **No secrets committed.** Token goes in `.env`.
 
-## Skills available
+### Two platform facts that constrain the code
 
-`case-study-context` (background for this case study — see above),
-`ctrader-mcp-servers` (official Spotware skill; **project-scoped and
-gitignored** — proprietary under the Spotware EULA, restore command is in
-`.gitignore`), `superpowers`, `prompt-engineer`, `mcp-builder`, `grilling`,
-`Thermo-Nuclear Code Quality Review`. Load what's relevant when it's relevant
-rather than front-loading.
+Both verified against the live server; full evidence in
+[`docs/platform-findings.md`](docs/platform-findings.md).
+
+- **Remote MCP exposes no per-symbol contract specs** — no `pipDigits`,
+  `lotSize` or `minVolume` anywhere, and no `get_symbol_details`. Preflight
+  therefore carries a hand-verified `symbols.yaml` and **fails closed** on
+  unknown symbols. Never guess a contract size.
+- **Price encoding is asymmetric** — market data is pipettes (`115502`), order
+  inputs are display prices (`1.15502`). Normalization rejects any 5+ digit
+  integer in a display-price field.
+
+## Account reality
+
+Demo account on Axiory (`ct.axiory.com`), a cTrader white-label. **€10,000
+balance, no open positions, no trade history.** Pre-trade checks don't need
+history, so most of this works against a flat account.
+
+- **Live orders are authorised at minimum size, showing me the parameters
+  before each one.**
+- **Where a rule needs existing exposure, ask** — I can open a couple of demo
+  positions by hand in a minute. Currently relevant: `amend_position` (P1)
+  can't be tested flat, since `Q-R10` needs a position with both legs set.
+
+## Materials
+
+Reference material — the JD, assignment, interview notes, what the remote MCP
+exposes, the platform's real state, regulatory grounding — lives in the
+`case-study-context` skill. Pull in whichever file answers the question you
+have; don't read it all up front.
+
+**Treat it as dated, not authoritative.** Several of its claims have been
+disproved against the live server.
+
+Skills: `case-study-context`, `ctrader-mcp-servers` (Spotware's, project-scoped
+and gitignored — proprietary under their EULA), `superpowers`,
+`prompt-engineer`, `mcp-builder`, `grilling`, `Thermo-Nuclear Code Quality
+Review`. Load what's relevant when it's relevant.
 
 ## What "done" looks like
 
 - **`SPEC.md`** — the Level 1 spec. Must contain: the problem; who it's for;
   scope **including what's deliberately cut**; how it uses the cTrader remote
-  MCP (which tools, and what the agent handles vs. what the app handles); 1–2
-  success metrics. ✅ written — these are the acceptance criteria if it's
-  revised, not a completed to-do.
-- **`PLAN.md`** — implementation plan and decision record. ✅ written
-- **`DIARY.md`** — written throughout. ✅ started, continues during the build
+  MCP (which tools, agent-vs-app split); 1–2 success metrics. These stay the
+  acceptance criteria if it's revised.
+- **`PLAN.md`** — implementation plan and decision record.
+- **`DIARY.md`** — written throughout.
 - **A working build** demonstrating the gate end-to-end against the **live**
-  cTrader remote MCP, with tests over the deterministic core
-- **`README.md`** — what it is, how to run it, and an honest account of what it
-  doesn't do
-- **A commit history** that shows how the thing came together, not one giant drop
+  cTrader remote MCP, with tests over the deterministic core.
+- **`README.md`** — what it is, how to run it, an honest account of what it
+  doesn't do.
+- **A commit history** showing how it came together, not one giant drop.
 
 If the build drifts from the spec, say why — that's useful information, not a
 failure.

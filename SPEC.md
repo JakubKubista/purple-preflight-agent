@@ -23,16 +23,23 @@ review every order by hand, because that removes the reason for using an agent.
 
 ## Solution
 
-A local MCP server that **exclusively holds the cTrader `trading` credential**. The agent
-gets the read-only `data` profile plus Preflight, and no direct mutation tools at all —
-so a denial isn't advice the agent may decline to take, it's a tool that doesn't exist.
-The remote MCP ships only `data` and `trading`, with nothing between; Preflight is that
-missing middle.
+A locally-run stdio MCP server that **exclusively holds the cTrader `trading`
+credential**. The agent gets the read-only `data` profile plus Preflight, and no direct
+mutation tools at all — so a denial isn't advice the agent may decline to take, it's a
+tool that doesn't exist. The remote MCP ships only `data` and `trading`, with nothing
+between; Preflight is that missing middle.
 
 Rules are pure functions over a normalized intent and a context snapshot: same input,
 same verdict, every time. Two modes — `observe` forwards while logging what it *would*
 have blocked, `enforce` refuses — so the journal can prove the rules aren't over-blocking
 before they become binding.
+
+Every decision resolves to one of three outcomes: **`ALLOW`**, **`DENY`** (a policy rule
+refused it), or **`ERROR`** (the gate couldn't judge — malformed input, or a symbol it
+has no verified metadata for). `DENY` and `ERROR` are deliberately distinct, and that
+distinction protects metric 1 below: a missing config row stops an order but isn't the
+policy working, and counting it as one would make the metric measure config completeness
+instead of policy correctness.
 
 ## How it uses the cTrader remote MCP
 
@@ -67,7 +74,7 @@ never reaches the broker; a live run against the real remote MCP.
 | Cut | Why |
 |---|---|
 | `max-risk-per-trade` | Deposit currency is EUR, both instruments quote USD. Pip value needs a conversion chain and remote MCP supplies no rates. The chain is the finding. |
-| `amend_position` gating | Quirk `Q-R10`: omitting `takeProfit` **silently deletes it**. A real footgun, but a second differently-shaped evaluator. |
+| `amend_position` gating | Quirk [`Q-R10`](docs/platform-findings.md): it deletes a take-profit by omission. A real footgun, but a second differently-shaped evaluator. |
 | Hash-chained journal | Tamper-evidence is narrative at demo scale; JSONL is schemaless, so it's a later one-liner. |
 | `symbol-allowlist` | Redundant — fail-closed metadata already refuses anything unlisted. |
 | Broker/prop-firm enforcement | The natural extension, but not credibly demonstrable from one demo account. |
@@ -85,8 +92,5 @@ never reaches the broker; a live run against the real remote MCP.
    metric Purple already tracks: if the value is in the rails, what matters is how fast
    someone reaches their first meaningful interaction with them.
 
----
-
-*Architecture, decision record and build order: `PLAN.md`. Platform findings, the
-outcome-class model, the reason-string standard and known limitations: `README.md`.
-Where the build drifted from this spec and why: `DIARY.md`.*
+Only `DENY` counts against either metric. `ERROR` is a configuration defect, reported
+separately.
