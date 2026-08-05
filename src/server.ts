@@ -3,13 +3,14 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import { gate } from './gate.js';
+import { evaluate } from './engine.js';
 import { mandatoryStopLoss } from './rules/mandatory-stop-loss.js';
 import { maxLotsPerSymbol } from './rules/max-lots-per-symbol.js';
 import { checkAmendPreservesLegs } from './amend-guard.js';
 import { createFileJournal } from './journal.js';
 import { RemoteCTraderClient } from './ctrader.js';
 import { loadPolicy, loadRuntimeConfig, loadSymbols } from './config.js';
-import type { EvaluationContext, OrderIntent, Rule } from './domain.js';
+import type { Decision, EvaluationContext, Mode, OrderIntent, Rule, RuleResult } from './domain.js';
 
 const policy = loadPolicy('policy.yaml');
 const symbols = loadSymbols('symbols.yaml');
@@ -40,6 +41,39 @@ async function readEquity(): Promise<number | undefined> {
 }
 
 /**
+ * amend-guard.ts speaks in RuleResult (one hardcoded check); gate() speaks in
+ * Decision (the shape every gated tool's verdict takes). This is that seam.
+ */
+function toDecision(result: RuleResult): Decision {
+  return { outcome: result.pass ? 'ALLOW' : 'DENY', reason: result.reason, rules: [result] };
+}
+
+/**
+ * Builds the MCP tool response from a verdict. Shared by every gated tool so
+ * the response shape can't drift between them the way it did before this was
+ * extracted — create_order and amend_position independently hand-rolled
+ * near-identical header logic that had already started to disagree.
+ */
+function toolResponse(decision: Decision, mode: Mode, forwarded: boolean) {
+  const stillForwarded = mode === 'observe' && decision.outcome !== 'ALLOW';
+  const header =
+    decision.outcome === 'ALLOW'
+      ? 'ALLOW'
+      : `${decision.outcome}${decision.code ? ` (${decision.code})` : ''}` +
+        (stillForwarded ? ' [observe mode — forwarded anyway]' : '');
+
+  return {
+    content: [
+      {
+        type: 'text' as const,
+        text: `${header}: ${decision.reason}\nmode=${mode} forwarded=${forwarded}`,
+      },
+    ],
+    isError: decision.outcome !== 'ALLOW' && mode === 'enforce',
+  };
+}
+
+/**
  * The gated tool. Mirrors cTrader's create_order schema exactly so Preflight is
  * a drop-in replacement — swapping the MCP config can't break a prompt that
  * already worked, and there's no unit translation to get wrong.
@@ -61,7 +95,8 @@ server.tool(
     label: z.string().max(100).optional(),
     comment: z.string().max(256).optional(),
   },
-  async (intent) => {
+  async (raw) => {
+    const intent = raw as OrderIntent;
     const ctx: EvaluationContext = {
       equity: (await readEquity()) ?? 0,
       ...(symbols.bySymbolId.get(intent.symbolId)
@@ -69,49 +104,22 @@ server.tool(
         : {}),
     };
 
-    const decision = await gate({
-      intent: intent as OrderIntent,
-      ctx,
+    const decision = evaluate(intent, ctx, rules);
+    const { forwarded } = await gate({
+      decision,
+      intent,
+      tool: 'create_order',
       mode: cfg.mode,
-      rules,
-      client,
+      forward: () => client.createOrder(intent),
       record,
+      equity: ctx.equity,
+      spotPrice: ctx.spotPrice,
     });
 
-    // The refusal a human reads first. Every rule states the proposed value, the
-    // limit, and the arithmetic connecting them — see docs/design-standards.md.
-    const forwarded = cfg.mode === 'observe' || decision.outcome === 'ALLOW';
-    const header =
-      decision.outcome === 'ALLOW'
-        ? 'ALLOW'
-        : `${decision.outcome}${decision.code ? ` (${decision.code})` : ''}` +
-          (cfg.mode === 'observe' ? ' [observe mode — forwarded anyway]' : '');
-
-    return {
-      content: [
-        {
-          type: 'text' as const,
-          text:
-            `${header}: ${decision.reason}\n` +
-            `mode=${cfg.mode} forwarded=${forwarded}\n` +
-            `Journalled to journal/decisions.jsonl`,
-        },
-      ],
-      isError: decision.outcome !== 'ALLOW' && cfg.mode === 'enforce',
-    };
+    return toolResponse(decision, cfg.mode, forwarded);
   },
 );
 
-/**
- * Pass-through mutations. Proxied but not evaluated in v1.
- *
- * These MUST be exposed even though they aren't gated: Preflight holds the only
- * trading credential, so if it didn't proxy them the trader could no longer
- * close a position at all.
- *
- * amend_position is the known gap — quirk Q-R10 means omitting takeProfit
- * silently deletes it. See docs/platform-findings.md.
- */
 /**
  * Gated: amend_position, guarded against quirk Q-R10.
  *
@@ -138,51 +146,29 @@ server.tool(
     };
     const position = live.positions?.find((p) => p.positionId === intent.positionId);
 
-    if (!position) {
-      // Fail closed: without current state we cannot know what would be lost.
-      return {
-        content: [
-          {
-            type: 'text' as const,
-            text:
-              `ERROR: position ${intent.positionId} not found, so the amend cannot be ` +
-              `checked against what it currently holds. Refusing rather than guessing.`,
-          },
-        ],
-        isError: true,
-      };
-    }
+    // Fail closed, same principle as engine.ts's missing-symbol-metadata check:
+    // without current state we cannot know what an amend would remove, so this
+    // is ERROR (the gate couldn't judge), not a policy DENY — and it still goes
+    // through gate() below, so it's journalled like every other decision.
+    const decision: Decision = position
+      ? toDecision(checkAmendPreservesLegs(intent, position))
+      : {
+          outcome: 'ERROR',
+          code: 'position_not_found',
+          reason: `position ${intent.positionId} not found; cannot check what an amend would remove`,
+          rules: [],
+        };
 
-    const result = checkAmendPreservesLegs(intent, position);
-    const forward = result.pass || cfg.mode === 'observe';
-
-    let brokerResponse: unknown;
-    if (forward) brokerResponse = await client.callTool('amend_position', intent);
-
-    record({
-      ts: new Date().toISOString(),
-      mode: cfg.mode,
-      tool: 'amend_position',
+    const { forwarded } = await gate({
+      decision,
       intent,
-      outcome: result.pass ? 'ALLOW' : 'DENY',
-      reason: result.reason,
-      rules: [result],
-      ...(brokerResponse !== undefined ? { brokerResponse } : {}),
+      tool: 'amend_position',
+      mode: cfg.mode,
+      forward: () => client.callTool('amend_position', intent),
+      record,
     });
 
-    const header = result.pass
-      ? 'ALLOW'
-      : `DENY${cfg.mode === 'observe' ? ' [observe mode — forwarded anyway]' : ''}`;
-
-    return {
-      content: [
-        {
-          type: 'text' as const,
-          text: `${header}: ${result.reason}\nmode=${cfg.mode} forwarded=${forward}`,
-        },
-      ],
-      isError: !result.pass && cfg.mode === 'enforce',
-    };
+    return toolResponse(decision, cfg.mode, forwarded);
   },
 );
 

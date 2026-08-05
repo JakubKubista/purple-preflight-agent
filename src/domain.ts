@@ -21,7 +21,7 @@ export type Mode = 'observe' | 'enforce';
 export type Outcome = 'ALLOW' | 'DENY' | 'ERROR';
 
 /** Why the gate couldn't judge. Only ever set alongside outcome 'ERROR'. */
-export type ErrorCode = 'malformed_price' | 'unknown_symbol_metadata' | 'malformed_request';
+export type ErrorCode = 'malformed_price' | 'unknown_symbol_metadata' | 'position_not_found';
 
 /**
  * A normalized create_order intent.
