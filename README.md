@@ -137,8 +137,11 @@ DENY  1.00 lots XAUUSD = 100 oz notional, limit 0.50 lots
 - **Symbol metadata is a build-time snapshot.** The remote MCP exposes no contract
   specifications at all, so `symbols.yaml` is hand-transcribed and broker-specific. A
   wrong value gives a confident wrong verdict.
-- **`amend_position` is proxied but not evaluated** — and it deletes a take-profit by
-  omission. See [`docs/platform-findings.md`](docs/platform-findings.md).
+- **`amend_order` and `cancel_order` are proxied but not evaluated.** Concretely: a
+  pending order placed within a `max-lots-per-symbol` cap can be resized past it via
+  `amend_order` afterward, since that call carries no policy check. `close_position` is
+  proxied unevaluated too, but can only reduce exposure. (`amend_position` *is* now
+  evaluated — see [`docs/platform-findings.md`](docs/platform-findings.md) for `Q-R10`.)
 - **The journal is local and unsigned.** Durable against crashes, not against a
   determined local user.
 - Single account. No UI. No live-account guards.
