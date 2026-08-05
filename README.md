@@ -153,6 +153,7 @@ DENY  1.00 lots XAUUSD = 100 oz notional, limit 0.50 lots
 | [`docs/architecture.md`](docs/architecture.md) | Credential model, modes, outcomes, agent-vs-app split |
 | [`docs/platform-findings.md`](docs/platform-findings.md) | Live-server findings that contradict the official docs |
 | [`docs/design-standards.md`](docs/design-standards.md) | Reason-string standard, determinism, testing approach |
+| [`docs/guide.md`](docs/guide.md) | Manual test walkthrough — copy-paste terminal commands, no coding required |
 
 Precedence, if two disagree: `CLAUDE.md` on process → `SPEC.md` on scope and metrics →
 `PLAN.md` on build order → `docs/` on design detail. This README is derived from those
