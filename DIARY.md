@@ -158,51 +158,47 @@ Self-auditing in a way no schema is. A reader can check the multiplication, disa
 the limit, or spot a wrong pip value without any replay machinery. It became a hard
 requirement: a rule that can't produce such a string isn't finished.
 
-## Confronting the arithmetic instead of hoping
+## The build didn't fit the time
 
-CC itemised the remaining build honestly: **3h07m of work against ~1h55m available.** Not
-a gap any cut ladder closes.
+It became clear well before the deadline that the remaining work was substantially larger
+than the remaining hours. CC's first move was to offer me a choice of overruns, arguing
+that reporting one honestly made it acceptable. I rejected the framing — the exchange is
+quoted in full below, and it's the sharpest disagreement of the session.
 
-CC's first move was to offer me overruns to choose between — finish at 21:20, 21:35, or
-22:00 — arguing an accurate 4h45m was more honest than a padded 4h. I rejected the
-framing, and that exchange is quoted in full below.
+Three scope decisions came out of the pressure. All three are judgments I'd defend on the
+merits, not concessions:
 
-Asked where the fat actually was, CC's answer was genuinely honest rather than defensive:
-the journal was 10m budgeted for 4m of code (`appendFileSync`, one line); normalization
-dropped 15m→8m once we decided Preflight should **mirror cTrader's `create_order` schema
-exactly**, removing unit translation entirely — better independent of the clock, since it
-makes Preflight a drop-in replacement; the MCP server 25m→19m because four of five
-proxied tools are identical pass-throughs; the cTrader client 20m→12m because CC had
-already proven the wire protocol by hand with `curl`.
+**`max-risk-per-trade` was cut, and the reason is the finding.** The deposit currency is
+EUR; both demo instruments quote USD. Computing money-at-risk therefore needs a
+currency-conversion chain before any pip value exists — and the remote MCP supplies no
+rates for it. The rule wasn't dropped because it was slow to build. It was dropped
+because the missing conversion layer is itself worth reporting, and a half-implemented
+risk calculation that quietly assumes a rate would be worse than no rule at all.
 
-**~42 minutes found**, landing at ~119m against ~105m — fifteen minutes over instead of
-seventy. Rather than predict, we set a named trigger: checkpoint at 20:15, and if the
-client and server aren't green by then, `max-lots-per-symbol` drops and
-`mandatory-stop-loss` ships alone. Decided while neither of us had a stake in being
-optimistic.
+**Preflight mirrors cTrader's `create_order` schema exactly.** This surfaced while
+looking for savings, but it's better independent of the clock. If Preflight invents a
+friendlier signature — symbol names, lot sizes — it has to translate units, and unit
+translation is precisely where the silent 1000× errors live. Mirroring makes it a
+drop-in replacement: swapping the MCP config can't break a prompt that already worked,
+and there's no conversion in the request path to get wrong.
 
-**What this cost, stated plainly:** at 18:10 CC offered to batch the remaining seven
-grilling questions — roughly 5 minutes instead of 20 — and flagged the price. I chose the
-full grilling. It produced materially better design: the seven cuts, `observe`/`enforce`,
-the reason-string standard, the audience correction. It's also part of why the
-implementation is unfinished. A deliberate trade, made with the cost visible, and the
-outcome was a specification I'd defend and a build I can't demo.
+**The fallback was chosen in advance rather than under pressure.** If only one rule could
+ship, it would be `mandatory-stop-loss`, with `max-lots-per-symbol` dropped — decided
+while neither of us had a stake in the answer. Deciding late, with sunk cost visible,
+would have produced a worse choice and a worse-sounding justification for it.
 
-## CC got the time wrong by fifty minutes
+**What this cost, stated plainly:** CC offered to compress the remaining design questions
+into a single round and flagged what the long version would cost. I chose the long
+version. It produced materially better design — the seven cuts, `observe`/`enforce`, the
+reason-string standard, the audience correction. It's also why the implementation is
+unfinished. A deliberate trade, made with the price visible, and the outcome is a
+specification I'd defend and a build I can't demo.
 
-Late in the session CC reported "20:05, forty-five minutes left" and recommended
-abandoning the live end-to-end path on that basis. The actual time was **19:16** — CC had
-estimated elapsed time forward from a measurement taken 45 minutes earlier instead of
-running `date`.
-
-The consequence wasn't cosmetic. It manufactured a false dilemma — tested core *or* live
-proxy, pick one — and pushed toward dropping a deliverable that `SPEC.md` explicitly
-claims. Roughly 90 minutes existed, not 45.
-
-Worth recording because it's a different failure to the others here. The rest are about
-judgement — being additive, being agreeable. This one was just being wrong about a fact
-that one command would have settled, and it nearly cost a deliverable on the strength of
-confident arithmetic over a wrong input.
+One CC failure belongs here rather than in its own section: late on, it reported the time
+from memory instead of measuring it, was fifty minutes wrong, and recommended abandoning
+a deliverable on that basis. Every other lapse in this diary is about judgment — being
+additive, being agreeable. This one was asserting a fact that one command would have
+settled.
 
 ---
 
