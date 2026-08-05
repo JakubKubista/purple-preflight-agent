@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { gate } from './gate.js';
 import { mandatoryStopLoss } from './rules/mandatory-stop-loss.js';
 import { maxLotsPerSymbol } from './rules/max-lots-per-symbol.js';
+import { checkAmendPreservesLegs } from './amend-guard.js';
 import { createFileJournal } from './journal.js';
 import { RemoteCTraderClient } from './ctrader.js';
 import { loadPolicy, loadRuntimeConfig, loadSymbols } from './config.js';
@@ -111,9 +112,82 @@ server.tool(
  * amend_position is the known gap — quirk Q-R10 means omitting takeProfit
  * silently deletes it. See docs/platform-findings.md.
  */
+/**
+ * Gated: amend_position, guarded against quirk Q-R10.
+ *
+ * Not routed through the declarative rule engine — a separate, hardcoded check
+ * with its own shape. create_order carries symbol/volume/side/prices;
+ * amend_position carries a position id and two optional fields. Forcing both
+ * through one generic evaluator would be premature generalisation across two
+ * shapes that barely overlap.
+ *
+ * Needs live position state, since the question is what the amend would REMOVE
+ * relative to what the position currently holds.
+ */
+server.tool(
+  'amend_position',
+  'Amend a position. Guarded: refuses amends that would silently delete an existing SL/TP leg (Q-R10).',
+  {
+    positionId: z.number().int(),
+    stopLoss: z.number().optional(),
+    takeProfit: z.number().optional(),
+  },
+  async (intent) => {
+    const live = (await client.callTool('get_positions', {})) as {
+      positions?: Array<{ positionId: number; stopLoss?: number; takeProfit?: number }>;
+    };
+    const position = live.positions?.find((p) => p.positionId === intent.positionId);
+
+    if (!position) {
+      // Fail closed: without current state we cannot know what would be lost.
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text:
+              `ERROR: position ${intent.positionId} not found, so the amend cannot be ` +
+              `checked against what it currently holds. Refusing rather than guessing.`,
+          },
+        ],
+        isError: true,
+      };
+    }
+
+    const result = checkAmendPreservesLegs(intent, position);
+    const forward = result.pass || cfg.mode === 'observe';
+
+    let brokerResponse: unknown;
+    if (forward) brokerResponse = await client.callTool('amend_position', intent);
+
+    record({
+      ts: new Date().toISOString(),
+      mode: cfg.mode,
+      tool: 'amend_position',
+      intent,
+      outcome: result.pass ? 'ALLOW' : 'DENY',
+      reason: result.reason,
+      rules: [result],
+      ...(brokerResponse !== undefined ? { brokerResponse } : {}),
+    });
+
+    const header = result.pass
+      ? 'ALLOW'
+      : `DENY${cfg.mode === 'observe' ? ' [observe mode — forwarded anyway]' : ''}`;
+
+    return {
+      content: [
+        {
+          type: 'text' as const,
+          text: `${header}: ${result.reason}\nmode=${cfg.mode} forwarded=${forward}`,
+        },
+      ],
+      isError: !result.pass && cfg.mode === 'enforce',
+    };
+  },
+);
+
 const PASS_THROUGH = [
   ['close_position', 'Close a position (proxied, not policy-evaluated)'],
-  ['amend_position', 'Amend a position (proxied, not policy-evaluated — see Q-R10)'],
   ['amend_order', 'Amend a pending order (proxied, not policy-evaluated)'],
   ['cancel_order', 'Cancel a pending order (proxied, not policy-evaluated)'],
 ] as const;

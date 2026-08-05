@@ -108,7 +108,8 @@ export interface JournalEntry {
   ts: string;
   mode: Mode;
   tool: string;
-  intent: OrderIntent;
+  /** Shape depends on `tool`. Structural rather than imported, to avoid a cycle. */
+  intent: OrderIntent | { positionId: number; stopLoss?: number; takeProfit?: number };
   outcome: Outcome;
   code?: ErrorCode;
   reason: string;
