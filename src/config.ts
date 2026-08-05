@@ -16,6 +16,8 @@ const PolicySchema = z.object({
   mode: z.enum(['observe', 'enforce']).optional(),
   rules: z.object({
     'mandatory-stop-loss': z.object({ enabled: z.boolean() }).optional(),
+    // Keyed by symbolName, value is the ceiling in lots.
+    'max-lots-per-symbol': z.record(z.string(), z.number().positive()).optional(),
   }),
 });
 

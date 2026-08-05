@@ -4,6 +4,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod';
 import { gate } from './gate.js';
 import { mandatoryStopLoss } from './rules/mandatory-stop-loss.js';
+import { maxLotsPerSymbol } from './rules/max-lots-per-symbol.js';
 import { createFileJournal } from './journal.js';
 import { RemoteCTraderClient } from './ctrader.js';
 import { loadPolicy, loadRuntimeConfig, loadSymbols } from './config.js';
@@ -18,6 +19,8 @@ const record = createFileJournal('journal/decisions.jsonl');
 
 const rules: Rule[] = [];
 if (policy.rules['mandatory-stop-loss']?.enabled) rules.push(mandatoryStopLoss);
+const lotLimits = policy.rules['max-lots-per-symbol'];
+if (lotLimits && Object.keys(lotLimits).length > 0) rules.push(maxLotsPerSymbol(lotLimits));
 
 const server = new McpServer({ name: 'preflight', version: '0.1.0' });
 

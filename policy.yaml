@@ -21,3 +21,15 @@ rules:
   # market order placed because the model didn't think to include a stop.
   mandatory-stop-loss:
     enabled: true
+
+  # Per-instrument position-size ceiling, in LOTS. A symbol not listed here is
+  # not capped — that's a policy choice, unlike a symbol missing from
+  # symbols.yaml, which is a config defect and refused outright.
+  #
+  # Note these are lots, not cTrader's `volume`. Preflight converts using the
+  # per-symbol lotSize from symbols.yaml, which is the whole reason that file
+  # exists: 1 lot of EURUSD is 100,000 EUR, 1 lot of XAUUSD is 100 oz. Writing
+  # a gold limit as though it were forex is off by a factor of 1000.
+  max-lots-per-symbol:
+    EURUSD: 1.00
+    XAUUSD: 0.50
