@@ -1,24 +1,22 @@
 # Implementation plan
 
-Outcome of the design session on 2026-08-05. `SPEC.md` says *what* and *why*; this says
-*how* and *in what order*. Decisions here were reached by grilling — each one was
-argued, several were overturned. `DIARY.md` records the ones worth remembering.
+Outcome of the design session on 2026-08-05. [`SPEC.md`](SPEC.md) says *what* and *why*;
+this says *how* and *in what order*. Decisions here were reached by grilling — each was
+argued and several were overturned; [`DIARY.md`](DIARY.md) records the ones worth
+remembering.
+
+This file is the **decision record and build order**. It deliberately does not explain
+the design — that lives in [`docs/architecture.md`](docs/architecture.md) (credential
+model, modes, outcomes, agent-vs-app split) and
+[`docs/design-standards.md`](docs/design-standards.md) (reason-string standard,
+determinism, testing approach). Each decision below is one line plus its rationale; where
+you want the reasoning in full, follow the link.
 
 ---
 
-## Architecture
-
-```
-Agent  ──┬── ctrader MCP  → https://mcp.ctrader.com/data/mcp     (read-only)
-         └── preflight    → stdio, local process
-                ├─ normalize + validate   Zod; pipettes leak → ERROR
-                ├─ rule engine            pure; (intent, ctx, policy) => Decision
-                ├─ journal                append-only JSONL
-                └─ ctrader client  ──→ https://mcp.ctrader.com/trading/mcp
-                                        ↑ Preflight alone holds this credential
-```
-
 ## Decisions
+
+Architecture diagram and the credential model: [`docs/architecture.md`](docs/architecture.md).
 
 | # | Decision | Rationale |
 |---|---|---|
@@ -34,11 +32,11 @@ Agent  ──┬── ctrader MCP  → https://mcp.ctrader.com/data/mcp     (re
 | D9 | Reason-string standard is a hard requirement | "Errors say what to do, not just what broke", applied to policy decisions |
 | D10 | Journal: one appended JSON line, no hash chain | Tamper-evidence is narrative at demo scale; JSONL is schemaless so it's a later one-liner |
 
-**Shared vs. disjoint.** Shared across tools: the `Decision` type, the journal writer,
-the `observe`/`enforce` branch, the forward step — this is gate machinery, and
-duplicating it would mean implementing observe mode twice. Disjoint: how a verdict is
-reached. `evaluateCreateOrder(intent, ctx, policy)` runs the declarative engine; the P1
-`checkAmendPreservesLegs` is hardcoded with no policy input at all.
+Rationale for `D4` in full — what is shared gate machinery versus what stays disjoint
+per tool — is in
+[`docs/architecture.md`](docs/architecture.md#no-shared-rule-engine-across-tools).
+`D6`'s evidence (all three probes) is in
+[`docs/platform-findings.md`](docs/platform-findings.md).
 
 ## Files
 
@@ -89,18 +87,21 @@ ships. Those two are what make the build mean anything.
 
 ## Verification
 
-- `npx vitest run` green; git log shows red-then-green per rule.
-- **The thesis test**, against a fake cTrader client that records calls:
-  - `enforce` + `DENY` → client called **zero** times
-  - `enforce` + `ALLOW` → called **exactly once**
-  - `observe` + `DENY` → called **once**, and the journal records the refusal
-- Determinism: same intent twice → identical `Decision`.
-- Golden conversion table, EURUSD (`lotSize` 100000) vs XAUUSD (100) — kept only if cheap.
-- **Live**, against the real remote MCP: DENY path first (order with no stop loss →
-  refused, nothing reaches the broker, journal line written); then ALLOW path — smallest
-  valid order, **parameters shown for confirmation before sending**, position verified
-  via `get_positions`.
-- No secrets committed; `.env` gitignored.
+What the test suite must cover, and why, is defined in
+[`docs/design-standards.md`](docs/design-standards.md#testing) — the thesis test,
+determinism, and the golden conversion tables. This section covers only what must be
+checked **for this build to be called done**:
+
+- `npx vitest run` green, and `git log` shows a failing-test commit preceding each
+  implementation commit. If the history doesn't show red-then-green, the standard wasn't
+  met regardless of the final state.
+- **Live, against the real remote MCP** — the claim `SPEC.md` makes and the one thing no
+  mock can establish:
+  1. **DENY path** — order with no stop loss. Refused, nothing reaches the broker,
+     journal line written. Confirm via `get_order_history` that no order exists.
+  2. **ALLOW path** — smallest valid order, **parameters shown for confirmation before
+     sending**, position verified via `get_positions`, journal line written.
+- `git status` clean of secrets; `.env` gitignored.
 
 ## Blocking input
 
@@ -113,12 +114,13 @@ Steps 1–2 and 6 don't depend on it. If it doesn't arrive, `symbols.yaml` is se
 the Spotware baseline table marked `UNVERIFIED for this broker`, and that caveat goes in
 the README.
 
-## Deferred, with reasons (not gaps)
+## Deferred
 
-- **`max-risk-per-trade`** — deposit currency is EUR, both instruments quote USD, so pip
-  value needs a conversion chain and remote MCP supplies no rates. The chain is the
-  finding.
-- **`amend_position` gating** — quirk `Q-R10`: omitting `takeProfit` silently deletes it.
-  Real footgun, and the next thing worth building.
-- **Hash-chained journal**, **`symbol-allowlist`** (redundant with fail-closed metadata),
-  multi-account, UI, live-account guards.
+The full list with reasons is the "deliberately out" table in [`SPEC.md`](SPEC.md#scope)
+— scope control is a graded part of that deliverable, so it's stated there once rather
+than restated here. `Q-R10`, the quirk behind deferring `amend_position`, is written up
+in [`docs/platform-findings.md`](docs/platform-findings.md).
+
+Build-order consequence only: `max-lots-per-symbol` (step 8) is the designated drop if
+the checkpoint above fires; everything else in that table was already out before the
+build started.
